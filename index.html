@@ -25,6 +25,7 @@
   --amber-soft: #f8ecd6;
   --danger: #b4382f;
   --danger-soft: #f8e1de;
+  --arrow: #e0890f;
   --sq-light: #e7ece6;
   --sq-dark: #8fa89c;
   --piece-w: #fbfbf8;
@@ -155,7 +156,7 @@ header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; ju
 
 /* Board */
 .board-wrap { display: grid; gap: 10px; justify-items: center; }
-.board { position: relative; width: 100%; max-width: 480px; aspect-ratio: 1; display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); border-radius: 6px; overflow: hidden; border: 1px solid var(--line); user-select: none; -webkit-user-select: none; }
+.board { position: relative; width: 100%; max-width: 600px; touch-action: none; aspect-ratio: 1; display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); border-radius: 6px; overflow: hidden; border: 1px solid var(--line); user-select: none; -webkit-user-select: none; }
 .sq { position: relative; display: grid; place-items: center; border: 0; padding: 0; background: var(--sq-light); }
 .sq.dark { background: var(--sq-dark); }
 .sq.last::after { content: ""; position: absolute; inset: 0; background: rgba(226, 172, 82, 0.38); }
@@ -174,7 +175,22 @@ header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; ju
 .promo { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; background: rgba(10, 14, 12, 0.55); }
 .promo div { display: flex; gap: 6px; background: var(--surface); padding: 10px; border-radius: 10px; }
 .promo button { width: 54px; height: 54px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); font-size: 34px; line-height: 1; }
-.board-caption { font-size: 13px; color: var(--muted); text-align: center; }
+.board-caption { font-size: 13px; color: var(--muted); text-align: center; max-width: 600px; }
+.boardpanel { padding: 14px; }
+.arrows { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 6; pointer-events: none; }
+.arrows line { stroke: var(--arrow); stroke-width: 0.2; stroke-linecap: round; }
+.arrows polygon { fill: var(--arrow); stroke: none; }
+.arrows .main { opacity: .9; }
+.arrows .ghost { opacity: .45; }
+.sq.dragging .pc { opacity: .25; }
+.dragpiece { position: fixed; z-index: 50; pointer-events: none; transform: translate(-50%, -55%); font-size: min(13vw, 64px); line-height: 1; font-family: "Segoe UI Symbol", "Apple Symbols", "DejaVu Sans", "Noto Sans Symbols 2", serif; }
+.boardmsg { width: 100%; max-width: 600px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; justify-content: space-between; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; min-height: 64px; }
+.boardmsg .bm-main { min-width: 0; display: grid; gap: 2px; }
+.boardmsg .bm-eyebrow { font-size: 11.5px; text-transform: uppercase; letter-spacing: .1em; font-weight: 700; color: var(--accent); }
+.boardmsg .bm-move { font-family: var(--font-display); font-size: clamp(22px, 4.4vw, 30px); line-height: 1.1; }
+.boardmsg .bm-sub { font-size: 13.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.boardmsg.opp .bm-eyebrow { color: var(--muted); }
+.boardmsg .btn.primary { padding: 10px 16px; font-size: 15px; }
 
 /* Scoresheet */
 .sheet { overflow-x: auto; }
@@ -211,7 +227,7 @@ footer { font-size: 12.5px; color: var(--muted); }
     <div class="ctl"><span class="ctl-label">You play</span>
       <div class="seg" id="colorSeg"><button data-v="w" type="button">White</button><button data-v="b" type="button">Black</button></div></div>
     <div class="ctl"><span class="ctl-label">View</span>
-      <div class="seg" id="modeSeg"><button data-v="blind" type="button">Blindfold</button><button data-v="visual" type="button">Board</button></div></div>
+      <div class="seg" id="modeSeg"><button data-v="visual" type="button">Board</button><button data-v="blind" type="button">Blindfold</button></div></div>
     <div class="ctl"><span class="ctl-label">Think time</span>
       <div class="seg" id="strengthSeg"><button data-v="quick" type="button" title="3 seconds per move">3 s</button><button data-v="strong" type="button" title="10 seconds per move">10 s</button><button data-v="deep" type="button" title="30 seconds per move, deepest search">30 s</button></div></div>
     <div class="ctl"><span class="ctl-label">Engine</span>
@@ -228,6 +244,14 @@ footer { font-size: 12.5px; color: var(--muted); }
 
   <div class="layout">
     <div class="col">
+      <section class="panel boardpanel" id="boardPanel" hidden>
+        <div class="board-wrap">
+          <div class="board" id="board" aria-label="Chessboard"></div>
+          <div class="boardmsg" id="boardMsg" aria-live="polite"></div>
+          <div class="board-caption">Drag a piece, or tap it and then tap where it goes. Move the opponent's pieces when they move; the arrow shows your best reply.</div>
+        </div>
+      </section>
+
       <section class="panel coach" aria-live="polite">
         <div class="statusbar" id="statusbar"></div>
         <div class="coach-body" id="coach"></div>
@@ -246,14 +270,6 @@ footer { font-size: 12.5px; color: var(--muted); }
     </div>
 
     <div class="col">
-      <section class="panel" id="boardPanel" hidden>
-        <h2>Board</h2>
-        <div class="board-wrap">
-          <div class="board" id="board" aria-label="Chessboard"></div>
-          <div class="board-caption">Tap a piece, then its destination, to enter a move. Green squares show the suggested move.</div>
-        </div>
-      </section>
-
       <section class="panel">
         <h2>Scoresheet</h2>
         <div class="summary" id="summary"></div>
@@ -383,10 +399,11 @@ const engine = new Engine();
 
 /* ---------------- State ---------------- */
 const STORE = 'chess-vision-v1';
-const fresh = () => ({ startFen: DEFAULT_POSITION, moves: [], redo: [], myColor: 'w', mode: 'blind', strength: 'strong', voice: 'off', engine: 'full' });
+const fresh = () => ({ startFen: DEFAULT_POSITION, moves: [], redo: [], myColor: 'w', mode: 'visual', boardFirst: true, strength: 'strong', voice: 'off', engine: 'full' });
 let S = fresh();
 try { const saved = JSON.parse(localStorage.getItem(STORE) || 'null'); if (saved && saved.startFen) S = { ...fresh(), ...saved }; } catch (e) { /* storage unavailable */ }
 if (!PRESETS[S.strength]) S.strength = 'strong';
+if (!S.boardFirst) { S.mode = 'visual'; S.boardFirst = true; }
 const save = () => { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { /* ignore */ } };
 
 let game, fens, played; // current game, FEN after each ply, verbose moves
@@ -663,6 +680,51 @@ function renderEntry() {
 }
 
 const GLYPH = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+function sqXY(sq) {
+  const f = 'abcdefgh'.indexOf(sq[0]), r = +sq[1];
+  return S.myColor === 'w' ? [f + 0.5, 8 - r + 0.5] : [7 - f + 0.5, r - 1 + 0.5];
+}
+function arrowSvg(m, cls) {
+  const [x1, y1] = sqXY(m.from), [x2, y2] = sqXY(m.to);
+  const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len;
+  const sx = x1, sy = y1;                                    // start at the piece's centre
+  const tx = x2 - ux * 0.1, ty = y2 - uy * 0.1;              // tip, just short of the target centre
+  const hx = tx - ux * 0.4, hy = ty - uy * 0.4;              // base of the arrowhead
+  const px = -uy * 0.24, py = ux * 0.24;                     // half-width of the head
+  return `<g class="${cls}"><line x1="${sx}" y1="${sy}" x2="${hx + ux * 0.02}" y2="${hy + uy * 0.02}"/><polygon points="${tx},${ty} ${hx + px},${hy + py} ${hx - px},${hy - py}"/></g>`;
+}
+function bestNow() {
+  if (!myTurn() || game.isGameOver()) return null;
+  if (rec && rec.fen === game.fen()) return { move: rec.lines[rec.pick].moves[0], live: false };
+  if (live && live.move && live.fen === game.fen()) return { move: live.move, live: true };
+  return null;
+}
+function drawArrow() {
+  const el = $('arrows'); if (!el) return;
+  const b = bestNow();
+  el.innerHTML = b ? arrowSvg(b.move, b.live ? 'ghost' : 'main') : '';
+}
+function renderBoardMsg() {
+  const el = $('boardMsg'); if (!el || S.mode !== 'visual') return;
+  el.className = 'boardmsg';
+  if (game.isGameOver()) { el.innerHTML = `<div class="bm-main"><div class="bm-eyebrow">Game over</div><div class="bm-move">${esc(gameOverText())}</div></div>`; return; }
+  if (!engine.ready) { el.innerHTML = `<div class="bm-main"><div class="bm-eyebrow">Engine</div><div class="bm-sub">${esc(engineFailed ? 'Stockfish could not start. Moves are still checked and tracked.' : bootMsg)}</div></div>`; return; }
+  if (!myTurn()) {
+    el.className = 'boardmsg opp';
+    el.innerHTML = `<div class="bm-main"><div class="bm-eyebrow">Opponent's turn</div><div class="bm-move">Move ${COLOR[game.turn()]}'s piece</div><div class="bm-sub">Drag the piece your opponent moved to its new square.</div></div>`;
+    return;
+  }
+  const b = bestNow();
+  if (b && !b.live) {
+    const l = rec.lines[rec.pick], d = describeMove(b.move);
+    const wdl = l.wdl ? ` · win ${pct(l.wdl[0])}%` : '';
+    el.innerHTML = `<div class="bm-main"><div class="bm-eyebrow">Your best move</div><div class="bm-move">${esc(NAMES[b.move.piece])} ${esc(d.arrow)}</div><div class="bm-sub">${esc(d.title)} · ${esc(scoreWords(l.score).short)}${wdl}</div></div>
+      <button class="btn primary" type="button" id="playBest">Play it</button>`;
+    return;
+  }
+  el.innerHTML = `<div class="bm-main"><div class="bm-eyebrow">Thinking</div><div class="bm-move" id="bmLive">${b ? esc(NAMES[b.move.piece] + ' ' + describeMove(b.move).arrow) : '…'}</div><div class="bm-sub" id="bmLiveSub">${esc(liveText())}</div></div>
+    <button class="btn" type="button" id="playNow" ${b ? '' : 'disabled'}>Stop and use this</button>`;
+}
 function renderBoard() {
   if (S.mode !== 'visual') return;
   const files = 'abcdefgh';
@@ -691,7 +753,10 @@ function renderBoard() {
     if (fi === 0) h += `<span class="coord r">${rank}</span>`;
     h += `</button>`;
   }
+  h += `<svg class="arrows" id="arrows" viewBox="0 0 8 8" aria-hidden="true"></svg>`;
   $('board').innerHTML = h;
+  drawArrow();
+  renderBoardMsg();
 }
 
 function renderSheet() {
@@ -770,8 +835,14 @@ async function analyze() {
     onProgress: (l, j) => {
       if (my !== gen) return;
       const m = pvToMoves(fen, l.pv, 1)[0];
-      live = { depth: l.depth, score: l.score, move: m, elapsed: performance.now() - j.t0 };
+      live = { depth: l.depth, score: l.score, move: m, elapsed: performance.now() - j.t0, fen };
       const t = $('thinkText'); if (t) t.textContent = liveText();
+      if (S.mode === 'visual') {
+        drawArrow();
+        const bl = $('bmLive');
+        if (bl && m) { bl.textContent = NAMES[m.piece] + ' ' + describeMove(m).arrow; $('bmLiveSub').textContent = liveText(); const pn = $('playNow'); if (pn) pn.disabled = false; }
+        else renderBoardMsg();
+      }
       const b = $('stopNow'); if (b) b.disabled = false;
     },
   });
@@ -904,15 +975,60 @@ for (const [id, key, reanalyze] of [['colorSeg', 'myColor', true], ['modeSeg', '
   });
 }
 
-/* Board clicks */
+/* Board: drag-and-drop */
+let drag = null, swallowClick = false;
+function tryMove(from, to) {
+  const cands = game.moves({ square: from, verbose: true }).filter((m) => m.to === to);
+  if (cands.length === 1) { commitMove(cands[0]); return true; }
+  if (cands.length > 1) { choosePromotion(cands); return true; }
+  return false;
+}
+$('board').addEventListener('pointerdown', (e) => {
+  const btn = e.target.closest('[data-sq]'); if (!btn || game.isGameOver() || (e.button && e.button !== 0)) return;
+  const p = game.get(btn.dataset.sq);
+  if (!p || p.color !== game.turn()) return;
+  drag = { from: btn.dataset.sq, x: e.clientX, y: e.clientY, el: null, glyph: GLYPH[p.type], color: p.color, btn };
+});
+window.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  if (!drag.el) {
+    if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6) return;
+    drag.el = document.createElement('span');
+    drag.el.className = 'dragpiece pc ' + drag.color;
+    drag.el.textContent = drag.glyph + '\uFE0E';
+    document.body.appendChild(drag.el);
+    drag.btn.classList.add('dragging');
+    selected = drag.from;
+  }
+  drag.el.style.left = e.clientX + 'px'; drag.el.style.top = e.clientY + 'px';
+  e.preventDefault();
+}, { passive: false });
+window.addEventListener('pointerup', (e) => {
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (!d.el) return; // a tap: the click handler deals with it
+  d.el.remove(); swallowClick = true; setTimeout(() => { swallowClick = false; }, 0);
+  const under = document.elementFromPoint(e.clientX, e.clientY);
+  const target = under && under.closest && under.closest('#board [data-sq]');
+  selected = null;
+  if (!(target && tryMove(d.from, target.dataset.sq))) {
+    if (target && target.dataset.sq !== d.from) setFeedback(`That piece can't move to ${UP(target.dataset.sq)}.`, 'err');
+    renderBoard();
+  }
+});
+window.addEventListener('pointercancel', () => { if (drag && drag.el) drag.el.remove(); drag = null; renderBoard(); });
+
+$('boardPanel').addEventListener('click', (e) => {
+  if (e.target.closest('#playBest') && rec && rec.fen === game.fen()) commitMove(rec.lines[rec.pick].moves[0]);
+  if (e.target.closest('#playNow')) { e.target.closest('#playNow').disabled = true; engine.stopCurrent(); }
+});
+
+/* Board: tap a piece, then its square */
 $('board').addEventListener('click', (e) => {
+  if (swallowClick) return;
   const btn = e.target.closest('[data-sq]'); if (!btn || game.isGameOver()) return;
   const sq = btn.dataset.sq;
-  if (selected) {
-    const cands = game.moves({ square: selected, verbose: true }).filter((m) => m.to === sq);
-    if (cands.length === 1) { commitMove(cands[0]); return; }
-    if (cands.length > 1) { choosePromotion(cands); return; }
-  }
+  if (selected && tryMove(selected, sq)) return;
   const p = game.get(sq);
   selected = p && p.color === game.turn() && selected !== sq ? sq : null;
   renderBoard();
