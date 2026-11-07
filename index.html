@@ -26,6 +26,7 @@
   --danger: #b4382f;
   --danger-soft: #f8e1de;
   --arrow: #e0890f;
+  --arrow2: #2f6fd0;
   --sq-light: #e7ece6;
   --sq-dark: #8fa89c;
   --piece-w: #fbfbf8;
@@ -178,10 +179,27 @@ header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; ju
 .board-caption { font-size: 13px; color: var(--muted); text-align: center; max-width: 600px; }
 .boardpanel { padding: 14px; }
 .arrows { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 6; pointer-events: none; }
-.arrows line { stroke: var(--arrow); stroke-width: 0.2; stroke-linecap: round; }
-.arrows polygon { fill: var(--arrow); stroke: none; }
-.arrows .main { opacity: .9; }
+.arrows g { --c: var(--arrow); }
+.arrows g.opt2 { --c: var(--arrow2); }
+.arrows line { stroke: var(--c); stroke-width: 0.2; stroke-linecap: round; }
+.arrows polygon { fill: var(--c); stroke: none; }
+.arrows circle { fill: var(--c); stroke: #fff; stroke-width: 0.04; }
+.arrows text { fill: #fff; font: 700 0.28px/1 system-ui, sans-serif; text-anchor: middle; dominant-baseline: central; }
+.arrows .main { opacity: .92; }
+.arrows .opt2 { opacity: .85; }
 .arrows .ghost { opacity: .45; }
+.opts { display: grid; gap: 8px; width: 100%; }
+.opt { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--arrow); border-radius: 8px; padding: 9px 10px 9px 12px; }
+.opt.o2 { border-left-color: var(--arrow2); }
+.opt .num { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--arrow); color: #fff; font-weight: 700; font-size: 14px; }
+.opt.o2 .num { background: var(--arrow2); }
+.opt .bm-move { font-size: clamp(19px, 3.8vw, 26px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nowrap { white-space: nowrap; }
+@media (max-width: 480px) {
+  .opt { grid-template-columns: auto minmax(0, 1fr); }
+  .opt .btn { grid-column: 2; justify-self: start; }
+}
+.opt .warn-note { color: var(--danger); font-weight: 600; }
 .sq.dragging .pc { opacity: .25; }
 .dragpiece { position: fixed; z-index: 50; pointer-events: none; transform: translate(-50%, -55%); font-size: min(13vw, 64px); line-height: 1; font-family: "Segoe UI Symbol", "Apple Symbols", "DejaVu Sans", "Noto Sans Symbols 2", serif; }
 .boardmsg { width: 100%; max-width: 600px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; justify-content: space-between; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; min-height: 64px; }
@@ -248,7 +266,7 @@ footer { font-size: 12.5px; color: var(--muted); }
         <div class="board-wrap">
           <div class="board" id="board" aria-label="Chessboard"></div>
           <div class="boardmsg" id="boardMsg" aria-live="polite"></div>
-          <div class="board-caption">Drag a piece, or tap it and then tap where it goes. Move the opponent's pieces when they move; the arrow shows your best reply.</div>
+          <div class="board-caption">Drag a piece, or tap it and then tap where it goes. Move the opponent's pieces when they move. Orange arrow 1 is your best move, blue arrow 2 is your second-best.</div>
         </div>
       </section>
 
@@ -355,7 +373,7 @@ class Engine {
   send(s) { this.w.postMessage(s); }
   /** pos: UCI "position" argument, e.g. "fen <start> moves e2e4 e7e5" (full history lets the engine see repetitions). */
   analyze(pos, { multipv = 1, ms = 2000, depth = 0, onProgress } = {}) {
-    const job = { pos, multipv, ms, depth, onProgress, lines: new Map(), stats: {}, cancelled: false };
+    const job = { pos, multipv, ms, depth, onProgress, byDepth: new Map(), stats: {}, cancelled: false };
     this.jobs.add(job);
     job.promise = this.q.then(() => this.run(job));
     this.q = job.promise.then(() => {}, () => {});
@@ -383,12 +401,21 @@ class Engine {
       const wdl = wi > -1 ? [+tk[wi + 1], +tk[wi + 2], +tk[wi + 3]] : null;
       const mpv = num('multipv') || 1;
       const entry = { multipv: mpv, depth: num('depth'), seldepth: num('seldepth'), score, wdl, pv: tk.slice(tk.indexOf('pv') + 1) };
-      j.lines.set(mpv, entry);
+      if (!j.byDepth.has(entry.depth)) j.byDepth.set(entry.depth, new Map());
+      j.byDepth.get(entry.depth).set(mpv, entry);
       if (mpv === 1) j.stats = { depth: entry.depth, seldepth: entry.seldepth, nodes: num('nodes'), nps: num('nps'), time: num('time') };
       if (mpv === 1 && j.onProgress && !j.cancelled) j.onProgress(entry, j);
     } else if (l.startsWith('bestmove')) {
       this.cur = null; this.jobs.delete(j);
-      const lines = [...j.lines.values()].sort((a, b) => a.multipv - b.multipv);
+      // Build the final list from the deepest search first. A search stopped mid-depth leaves some lines
+      // from the previous depth, which can repeat a move already ranked; each move appears once.
+      const lines = [], seen = new Set();
+      for (const d of [...j.byDepth.keys()].sort((a, b) => b - a)) {
+        for (const e of [...j.byDepth.get(d).values()].sort((a, b) => a.multipv - b.multipv)) {
+          if (lines.length >= j.multipv || !e.pv.length || seen.has(e.pv[0])) continue;
+          seen.add(e.pv[0]); lines.push(e);
+        }
+      }
       j.res(j.cancelled ? null : { lines, ...j.stats, time: j.stats.time ?? Math.round(performance.now() - j.t0), bestmove: l.split(' ')[1] });
     }
   }
@@ -684,14 +711,17 @@ function sqXY(sq) {
   const f = 'abcdefgh'.indexOf(sq[0]), r = +sq[1];
   return S.myColor === 'w' ? [f + 0.5, 8 - r + 0.5] : [7 - f + 0.5, r - 1 + 0.5];
 }
-function arrowSvg(m, cls) {
-  const [x1, y1] = sqXY(m.from), [x2, y2] = sqXY(m.to);
+function arrowSvg(m, cls, num, shift = 0) {
+  let [x1, y1] = sqXY(m.from), [x2, y2] = sqXY(m.to);
   const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len;
+  if (shift) { x1 += -uy * shift; y1 += ux * shift; x2 += -uy * shift; y2 += ux * shift; } // side-step so overlapping arrows stay visible
   const sx = x1, sy = y1;                                    // start at the piece's centre
   const tx = x2 - ux * 0.1, ty = y2 - uy * 0.1;              // tip, just short of the target centre
   const hx = tx - ux * 0.4, hy = ty - uy * 0.4;              // base of the arrowhead
   const px = -uy * 0.24, py = ux * 0.24;                     // half-width of the head
-  return `<g class="${cls}"><line x1="${sx}" y1="${sy}" x2="${hx + ux * 0.02}" y2="${hy + uy * 0.02}"/><polygon points="${tx},${ty} ${hx + px},${hy + py} ${hx - px},${hy - py}"/></g>`;
+  const bx = (sx + hx) / 2, by = (sy + hy) / 2;              // number badge on the shaft
+  const badge = num ? `<circle cx="${bx}" cy="${by}" r="0.2"/><text x="${bx}" y="${by}">${num}</text>` : '';
+  return `<g class="${cls}"><line x1="${sx}" y1="${sy}" x2="${hx + ux * 0.02}" y2="${hy + uy * 0.02}"/><polygon points="${tx},${ty} ${hx + px},${hy + py} ${hx - px},${hy - py}"/>${badge}</g>`;
 }
 function bestNow() {
   if (!myTurn() || game.isGameOver()) return null;
@@ -699,10 +729,36 @@ function bestNow() {
   if (live && live.move && live.fen === game.fen()) return { move: live.move, live: true };
   return null;
 }
+/** The engine's second choice (a different move from the pick), once the search is finished. */
+function secondLine() {
+  if (!myTurn() || game.isGameOver() || !rec || rec.fen !== game.fen()) return null;
+  return rec.lines.find((l, i) => i !== rec.pick) || null;
+}
 function drawArrow() {
   const el = $('arrows'); if (!el) return;
-  const b = bestNow();
-  el.innerHTML = b ? arrowSvg(b.move, b.live ? 'ghost' : 'main') : '';
+  const b = bestNow(), two = b && !b.live ? secondLine() : null;
+  // When both moves start on the same square and point the same way, nudge arrow 2 to the side.
+  let shift = 0;
+  if (two) {
+    const a = b.move, c = two.moves[0];
+    const [ax, ay] = sqXY(a.from), [bx, by] = sqXY(a.to), [cx, cy] = sqXY(c.to);
+    if (a.from === c.from && Math.abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) < 1e-6 && (bx - ax) * (cx - ax) + (by - ay) * (cy - ay) > 0) shift = 0.2;
+  }
+  el.innerHTML = (two ? arrowSvg(two.moves[0], 'opt2', 2, shift) : '') + (b ? arrowSvg(b.move, b.live ? 'ghost' : 'main', two ? 1 : 0, -shift) : '');
+}
+function optionRow(l, n) {
+  const m = l.moves[0], d = describeMove(m);
+  const wdl = l.wdl ? ` · win ${pct(l.wdl[0])}%, lose ${pct(l.wdl[2])}%` : '';
+  let note = '';
+  if (n === 2) {
+    const best = rec.lines[rec.pick];
+    const gap = (clampCp(best.score) - clampCp(l.score)) / 100;
+    if ((best.score.mate > 0 && !(l.score.mate > 0)) || gap >= 1.5) note = `<div class="bm-sub warn-note">Much weaker than option 1 (about ${Math.min(gap, 10).toFixed(1)} pawns). Play option 1 if you can.</div>`;
+    else if (gap >= 0.3) note = `<div class="bm-sub">A little weaker than option 1 (about ${gap.toFixed(1)} pawns).</div>`;
+    else note = `<div class="bm-sub">About as strong as option 1.</div>`;
+  }
+  return `<div class="opt o${n}"><span class="num">${n}</span><div class="bm-main"><div class="bm-move">${esc(NAMES[m.piece])} <span class="nowrap">${esc(d.arrow)}</span></div><div class="bm-sub">${esc(d.title)} · ${esc(scoreWords(l.score).short)}${wdl}</div>${note}</div>
+    <button class="btn ${n === 1 ? 'primary' : ''}" type="button" data-opt="${n}">Play ${n}</button></div>`;
 }
 function renderBoardMsg() {
   const el = $('boardMsg'); if (!el || S.mode !== 'visual') return;
@@ -716,10 +772,8 @@ function renderBoardMsg() {
   }
   const b = bestNow();
   if (b && !b.live) {
-    const l = rec.lines[rec.pick], d = describeMove(b.move);
-    const wdl = l.wdl ? ` · win ${pct(l.wdl[0])}%` : '';
-    el.innerHTML = `<div class="bm-main"><div class="bm-eyebrow">Your best move</div><div class="bm-move">${esc(NAMES[b.move.piece])} ${esc(d.arrow)}</div><div class="bm-sub">${esc(d.title)} · ${esc(scoreWords(l.score).short)}${wdl}</div></div>
-      <button class="btn primary" type="button" id="playBest">Play it</button>`;
+    const two = secondLine();
+    el.innerHTML = `<div class="opts"><div class="bm-eyebrow">${two ? 'Your two best moves' : 'Your only legal move'}</div>${optionRow(rec.lines[rec.pick], 1)}${two ? optionRow(two, 2) : ''}</div>`;
     return;
   }
   el.innerHTML = `<div class="bm-main"><div class="bm-eyebrow">Thinking</div><div class="bm-move" id="bmLive">${b ? esc(NAMES[b.move.piece] + ' ' + describeMove(b.move).arrow) : '…'}</div><div class="bm-sub" id="bmLiveSub">${esc(liveText())}</div></div>
@@ -866,6 +920,8 @@ async function analyze() {
   const oc = outcomeOf(lines[pick]);
   say += `Your best move: ${describeMove(bm).sentence}. ${[...(oc ? [oc.text] : []), ...reasons].slice(0, 2).join(' ')}`;
   if (threats.length && !reasons.length) say += ' ' + threats[0];
+  const two = lines.find((l, i) => i !== pick);
+  if (two) say += ` Second choice: ${describeMove(two.moves[0]).sentence}.`;
   speak(say);
 
   // Threat check: what would they play if you passed? (impossible when in check)
@@ -1019,7 +1075,11 @@ window.addEventListener('pointerup', (e) => {
 window.addEventListener('pointercancel', () => { if (drag && drag.el) drag.el.remove(); drag = null; renderBoard(); });
 
 $('boardPanel').addEventListener('click', (e) => {
-  if (e.target.closest('#playBest') && rec && rec.fen === game.fen()) commitMove(rec.lines[rec.pick].moves[0]);
+  const ob = e.target.closest('[data-opt]');
+  if (ob && rec && rec.fen === game.fen()) {
+    const l = ob.dataset.opt === '1' ? rec.lines[rec.pick] : secondLine();
+    if (l) commitMove(l.moves[0]);
+  }
   if (e.target.closest('#playNow')) { e.target.closest('#playNow').disabled = true; engine.stopCurrent(); }
 });
 

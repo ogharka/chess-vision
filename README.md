@@ -1,6 +1,6 @@
 # Chess Vision
 
-A blindfold chess coach that runs entirely in your browser. Move your opponent's piece on the board (or type or say the move) and Stockfish 18 draws an arrow showing your strongest reply, with the move in plain words: which piece, from which square, to which square, and why.
+A blindfold chess coach that runs entirely in your browser. Move your opponent's piece on the board (or type or say the move) and Stockfish 18 draws two arrows: your best reply (1) and your second-best (2), with the move in plain words: which piece, from which square, to which square, and why.
 
 **Open it:** https://ogharka.github.io/chess-vision/
 
